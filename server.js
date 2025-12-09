@@ -1,61 +1,75 @@
 const express = require("express");
-const multer = require("multer");
 const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
+const cloudinary = require("cloudinary").v2;
+const multer = require("multer");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+require("dotenv").config();  // load env variables
 
 const app = express();
+app.use(cors());
 
-/*  CORS Setup */
-app.use(cors({
-    origin: "https://frame-setup.netlify.app/",                
-    methods: "GET,POST,DELETE",
-    allowedHeaders: "Content-Type"
-}));
+//  Cloudinary config
+cloudinary.config({
+    cloud_name: process.env.CLOUD_NAME,
+    api_key: process.env.CLOUD_API_KEY,
+    api_secret: process.env.CLOUD_API_SECRET
+});
 
-// Serve uploaded frames publicly
-app.use("/frames", express.static("uploads/frames"));
-
-// STORAGE SETTINGS
-const storage = multer.diskStorage({
-    destination: function(req, file, cb) {
-        cb(null, "uploads/frames/");
-    },
-    filename: function(req, file, cb) {
-        cb(null, Date.now() + "_" + file.originalname);
+//  Multer Cloudinary storage setup
+const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: "frames",              // Cloudinary folder name
+        allowed_formats: ["jpg", "png", "jpeg"]
     }
 });
 
 const upload = multer({ storage });
 
-//  POST — admin uploads frame
+//  POST — upload frame
 app.post("/upload-frame", upload.single("frame"), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+    try {
+        return res.json({
+            message: "Frame uploaded successfully!",
+            url: req.file.path  // Cloudinary file URL
+        });
+    } catch (err) {
+        return res.status(500).json({ error: "Upload failed" });
     }
-    res.json({ message: "Frame uploaded successfully!" });
 });
 
-//  GET — return all frames
-app.get("/frames-list", (req, res) => {
-    fs.readdir("uploads/frames", (err, files) => {
-        if (err) return res.status(500).json({ error: "Folder read error" });
-        res.json(files);
-    });
+//  GET — list all frames
+app.get("/frames-list", async (req, res) => {
+    try {
+        const response = await cloudinary.search
+            .expression("folder:frames")
+            .sort_by("created_at", "desc")
+            .execute();
+
+        const urls = response.resources.map(img => img.secure_url);
+
+        res.json(urls);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch frames" });
+    }
 });
 
-//  DELETE — delete selected frame
-app.delete("/delete-frame/:filename", (req, res) => {
-    const filePath = path.join("uploads/frames", req.params.filename);
+//  DELETE — delete frame
+app.delete("/delete-frame", async (req, res) => {
+    const { public_id } = req.query; // pass public id
 
-    if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        return res.json({ message: "Frame deleted successfully" });
-    } else {
-        return res.status(404).json({ message: "File not found" });
+    if (!public_id) {
+        return res.status(400).json({ message: "Missing public_id" });
+    }
+
+    try {
+        await cloudinary.uploader.destroy(public_id);
+        res.json({ message: "Frame deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ error: "Delete failed" });
     }
 });
 
 // RUN SERVER
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log("Server running on port " + PORT));
+app.listen(PORT, () => console.log("Server running at " + PORT));
