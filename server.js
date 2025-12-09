@@ -2,10 +2,16 @@ const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
 const fs = require("fs");
-const path = require("path"); 
+const path = require("path");
 
 const app = express();
-app.use(cors());
+
+/*  CORS Setup */
+app.use(cors({
+    origin: "https://frame-setup.netlify.app/",                
+    methods: "GET,POST,DELETE",
+    allowedHeaders: "Content-Type"
+}));
 
 // Serve uploaded frames publicly
 app.use("/frames", express.static("uploads/frames"));
@@ -22,7 +28,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// 📌 POST — admin uploads frame
+//  POST — admin uploads frame
 app.post("/upload-frame", upload.single("frame"), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -30,16 +36,15 @@ app.post("/upload-frame", upload.single("frame"), (req, res) => {
     res.json({ message: "Frame uploaded successfully!" });
 });
 
-// 📌 GET — return all frames available
+//  GET — return all frames
 app.get("/frames-list", (req, res) => {
     fs.readdir("uploads/frames", (err, files) => {
         if (err) return res.status(500).json({ error: "Folder read error" });
-
         res.json(files);
     });
 });
 
-// DELETE frame API
+//  DELETE — delete selected frame
 app.delete("/delete-frame/:filename", (req, res) => {
     const filePath = path.join("uploads/frames", req.params.filename);
 
@@ -50,6 +55,7 @@ app.delete("/delete-frame/:filename", (req, res) => {
         return res.status(404).json({ message: "File not found" });
     }
 });
+
 // RUN SERVER
-const PORT = 5000;
-app.listen(PORT, () => console.log("Server running at http://localhost:" + PORT));
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log("Server running on port " + PORT));
